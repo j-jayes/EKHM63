@@ -20,7 +20,7 @@ Group project for EKHM63 - Growth over space and time
 ### Reading in data
 
 ```{r}
-df <- read_excel(here("data", "Germany.xlsx")) %>% 
+df <- read_excel(here("data", "France.xlsx")) %>% 
   janitor::clean_names()
 ```
 
@@ -52,9 +52,9 @@ df %>%
 ```
 
 ```{r}
-tc <- 10
+tc <- 3
 
-df %>% 
+df_time_chunks <- df %>% 
   group_by(indicator) %>% 
   mutate(time_chunk = year - year %% tc) %>% 
   ungroup() %>% 
@@ -64,12 +64,58 @@ df %>%
   mutate(ratio_value = value / lag(value),
          one_over_change_year = 1/(year - lag(year)),
          compound_gr = ratio_value^(one_over_change_year)-1) %>% 
-  ungroup() %>% 
-  filter(str_detect(indicator, "GDP"),
+  ungroup() 
+
+df_time_chunks %>% 
+  filter(str_detect(indicator, "Total Hours"),
          !is.na(compound_gr)) %>% 
   ggplot(aes(year, compound_gr)) +
   geom_point() +
   geom_line() +
+  scale_y_continuous(labels = scales::percent_format())
+```
+
+
+GDP (volume), Total Hours, Capital Stock
+
+```{r}
+df_time_chunks %>% 
+  filter(indicator %in% c("GDP (volume)", "Total Hours", "Capital Stock (K)"),
+         !is.na(compound_gr)) %>% 
+  ggplot(aes(year, compound_gr, colour = indicator)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(y = "Compound Growth Rate",
+       x = NULL,
+       colour = "Indicator")
+```
+
+
+```{r}
+# capital weight
+alpha <- .3
+# labour weight
+beta <- .7
+```
+
+
+```{r}
+
+df_time_chunks %>% 
+  filter(indicator %in% c("GDP (volume)", "Total Hours", "Capital Stock (K)"),
+         !is.na(compound_gr)) %>% 
+  select(indicator, year, compound_gr) %>% 
+  pivot_wider(names_from = indicator, values_from = compound_gr) %>% 
+  mutate(capital_contrib = alpha*`Capital Stock (K)`,
+         labour_contrib = beta*`Total Hours`,
+         crude_tfp = `GDP (volume)` - capital_contrib - labour_contrib) %>% 
+  pivot_longer(-year) %>% 
+  filter(name %in% c("capital_contrib", "labour_contrib", "crude_tfp")) %>% 
+  mutate(name = str_to_sentence(str_replace(name, "_", " "))) %>% 
+  ggplot(aes(year, value, fill = name)) +
+  geom_col(position = "dodge") +
   scale_y_continuous(labels = scales::percent_format())
 ```
 
