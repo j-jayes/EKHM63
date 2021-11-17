@@ -1,0 +1,75 @@
+---
+title: "Untitled"
+author: "JJayes"
+date: "17/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(here)
+library(readxl)
+```
+
+## Purpose
+
+Group project for EKHM63 - Growth over space and time
+
+### Reading in data
+
+```{r}
+df <- read_excel(here("data", "Germany.xlsx")) %>% 
+  janitor::clean_names()
+```
+
+### Tidy to long format
+```{r}
+df <- df %>% 
+  pivot_longer(-c(indicator, measure), names_to = "year") %>% 
+  mutate(year = parse_number(year))
+
+df %>% 
+  distinct(indicator)
+```
+
+### Calculate growth rates
+
+```{r}
+df <- df %>% 
+  group_by(indicator) %>% 
+  mutate(growth_rate = (value - lag(value))/lag(value)*100)
+
+df %>% 
+  filter(str_detect(indicator, "Employment")) %>% 
+  pivot_longer(cols = c(value, growth_rate)) %>% 
+  ggplot(aes(year, value)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(labels = scales::number_format()) +
+  facet_wrap(~ name, scales = "free_y", nrow = 2)
+```
+
+```{r}
+tc <- 10
+
+df %>% 
+  group_by(indicator) %>% 
+  mutate(time_chunk = year - year %% tc) %>% 
+  ungroup() %>% 
+  group_by(indicator, time_chunk) %>% 
+  mutate(index = row_number()) %>% 
+  filter(index %in% c(1, tc)) %>% 
+  mutate(ratio_value = value / lag(value),
+         one_over_change_year = 1/(year - lag(year)),
+         compound_gr = ratio_value^(one_over_change_year)-1) %>% 
+  ungroup() %>% 
+  filter(str_detect(indicator, "GDP"),
+         !is.na(compound_gr)) %>% 
+  ggplot(aes(year, compound_gr)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(labels = scales::percent_format())
+```
+
