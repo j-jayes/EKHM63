@@ -29,7 +29,30 @@ df <- read_excel(here("data", "France.xlsx")) %>%
 df <- df %>% 
   pivot_longer(-c(indicator, measure), names_to = "year") %>% 
   mutate(year = parse_number(year))
+```
 
+### Create labour productivity
+
+```{r}
+df_labour_prod <- df %>% 
+  filter(indicator %in% c("GDP (volume)", "Total Hours")) %>% 
+  select(indicator, year, value) %>% 
+  pivot_wider(names_from = indicator) %>% 
+  mutate(labour_productivity = `GDP (volume)` / `Total Hours`) %>% 
+  select(year, labour_productivity)
+
+df_labour_prod <- df_labour_prod %>% 
+  mutate(indicator = "Labour Productivity",
+         measure = "`GDP (volume)` / `Total Hours`") %>% 
+  rename(value = labour_productivity)
+
+df <- df %>% 
+  bind_rows(df_labour_prod)
+```
+
+
+
+```{r}
 df %>% 
   distinct(indicator)
 ```
@@ -39,7 +62,8 @@ df %>%
 ```{r}
 df <- df %>% 
   group_by(indicator) %>% 
-  mutate(growth_rate = (value - lag(value))/lag(value)*100)
+  mutate(growth_rate = (value - lag(value))/lag(value)*100) %>% 
+  ungroup()
 
 df %>% 
   filter(str_detect(indicator, "Employment")) %>% 
@@ -52,7 +76,7 @@ df %>%
 ```
 
 ```{r}
-tc <- 3
+tc <- 10
 
 df_time_chunks <- df %>% 
   group_by(indicator) %>% 
@@ -103,7 +127,7 @@ beta <- .7
 
 ```{r}
 
-df_time_chunks %>% 
+df_contribs <- df_time_chunks %>% 
   filter(indicator %in% c("GDP (volume)", "Total Hours", "Capital Stock (K)"),
          !is.na(compound_gr)) %>% 
   select(indicator, year, compound_gr) %>% 
@@ -112,10 +136,42 @@ df_time_chunks %>%
          labour_contrib = beta*`Total Hours`,
          crude_tfp = `GDP (volume)` - capital_contrib - labour_contrib) %>% 
   pivot_longer(-year) %>% 
-  filter(name %in% c("capital_contrib", "labour_contrib", "crude_tfp")) %>% 
+  filter(name %in% c("capital_contrib", "labour_contrib", "crude_tfp", "GDP (volume)")) %>% 
+  mutate(name = str_to_sentence(str_replace(name, "_", " ")))
+
+df_contribs %>% 
+  pivot_wider(names_from = name) %>% 
+  pivot_longer(-c(year, `Gdp (volume)`)) %>% 
+  ggplot() +
+  geom_col(aes(year, value, fill = name), 
+           position = "dodge", 
+           alpha = .8) +
+  geom_point(aes(year, `Gdp (volume)`,colour = "GDP Growth")) +
+  geom_line(aes(year, `Gdp (volume)`,colour = "GDP Growth")) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = NULL,
+       fill = "Contribution to GDP Growth",
+       colour = "Level of GDP Growth")
+```
+
+
+
+```{r}
+df_time_chunks %>% 
+  filter(indicator %in% c("GDP (volume)", "Total Hours", "Capital Stock (K)", "Labour Productivity"),
+         !is.na(compound_gr)) %>% 
+  select(indicator, year, compound_gr) %>% 
+  pivot_wider(names_from = indicator, values_from = compound_gr) %>% 
+  mutate(k_growth_per_worker = `Capital Stock (K)` - `Total Hours`,
+         contrib_of_capital_deepening = k_growth_per_worker*alpha,
+         crude_tfp = `Labour Productivity` - contrib_of_capital_deepening) %>% 
+  pivot_longer(-year) %>% 
+  filter(name %in% c("Labour Productivity",  "crude_tfp", "contrib_of_capital_deepening")) %>% 
   mutate(name = str_to_sentence(str_replace(name, "_", " "))) %>% 
   ggplot(aes(year, value, fill = name)) +
   geom_col(position = "dodge") +
   scale_y_continuous(labels = scales::percent_format())
+
 ```
+
 
