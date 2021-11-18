@@ -20,7 +20,7 @@ Group project for EKHM63 - Growth over space and time
 ### Reading in data
 
 ```{r}
-df <- read_excel(here("data", "France.xlsx")) %>% 
+df <- read_excel(here("data", "USA.xlsx")) %>% 
   janitor::clean_names()
 ```
 
@@ -64,7 +64,42 @@ df <- df %>%
   group_by(indicator) %>% 
   mutate(growth_rate = (value - lag(value))/lag(value)*100) %>% 
   ungroup()
+```
 
+### Write out data
+
+```{r}
+# df %>% 
+#   mutate(country = "USA") %>% 
+#   write_rds(here("data", "df_usa.rds"))
+```
+
+### Read in new data
+
+```{r}
+# df_long <- df_brazil %>% 
+#   bind_rows(df_france) %>% 
+#   bind_rows(df_germany) %>% 
+#   bind_rows(df_india) %>% 
+#   bind_rows(df_italy) %>% 
+#   bind_rows(df_japan) %>% 
+#   bind_rows(df_singapore) %>% 
+#   bind_rows(df_spain) %>% 
+#   bind_rows(df_sweden) %>% 
+#   bind_rows(df_uk) %>% 
+#   bind_rows(df_usa) 
+
+# df_long %>% write_rds(here("df_all_countries.rds"), compress = "gz")
+```
+
+### Read in all
+
+```{r}
+df <- read_rds(here("data", "df_all_countries.rds"))
+```
+
+
+```{r}
 df %>% 
   filter(str_detect(indicator, "Employment")) %>% 
   pivot_longer(cols = c(value, growth_rate)) %>% 
@@ -76,7 +111,7 @@ df %>%
 ```
 
 ```{r}
-tc <- 10
+tc <- 5
 
 df_time_chunks <- df %>% 
   group_by(indicator) %>% 
@@ -127,27 +162,27 @@ beta <- .7
 
 ```{r}
 
-df_contribs <- df_time_chunks %>% 
+df_contributions <- df_time_chunks %>% 
   filter(indicator %in% c("GDP (volume)", "Total Hours", "Capital Stock (K)"),
          !is.na(compound_gr)) %>% 
   select(indicator, year, compound_gr) %>% 
   pivot_wider(names_from = indicator, values_from = compound_gr) %>% 
-  mutate(capital_contrib = alpha*`Capital Stock (K)`,
-         labour_contrib = beta*`Total Hours`,
-         crude_tfp = `GDP (volume)` - capital_contrib - labour_contrib) %>% 
+  janitor::clean_names() %>% 
+  mutate(capital_contribution = alpha*capital_stock_k,
+         labour_contribution = beta*total_hours,
+         crude_tfp = gdp_volume - capital_contribution - labour_contribution) %>% 
   pivot_longer(-year) %>% 
-  filter(name %in% c("capital_contrib", "labour_contrib", "crude_tfp", "GDP (volume)")) %>% 
-  mutate(name = str_to_sentence(str_replace(name, "_", " ")))
+  filter(name %in% c("capital_contribution", "labour_contribution", "crude_tfp", "gdp_volume"))
 
-df_contribs %>% 
+df_contributions %>% 
   pivot_wider(names_from = name) %>% 
-  pivot_longer(-c(year, `Gdp (volume)`)) %>% 
+  pivot_longer(-c(year, gdp_volume)) %>% 
   ggplot() +
   geom_col(aes(year, value, fill = name), 
            position = "dodge", 
            alpha = .8) +
-  geom_point(aes(year, `Gdp (volume)`,colour = "GDP Growth")) +
-  geom_line(aes(year, `Gdp (volume)`,colour = "GDP Growth")) +
+  geom_point(aes(year, gdp_volume, colour = "GDP Growth")) +
+  geom_line(aes(year, gdp_volume, colour = "GDP Growth")) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(x = NULL,
        fill = "Contribution to GDP Growth",
@@ -162,16 +197,223 @@ df_time_chunks %>%
          !is.na(compound_gr)) %>% 
   select(indicator, year, compound_gr) %>% 
   pivot_wider(names_from = indicator, values_from = compound_gr) %>% 
-  mutate(k_growth_per_worker = `Capital Stock (K)` - `Total Hours`,
-         contrib_of_capital_deepening = k_growth_per_worker*alpha,
-         crude_tfp = `Labour Productivity` - contrib_of_capital_deepening) %>% 
+  janitor::clean_names() %>% 
+  mutate(k_per_worker_growth = capital_stock_k - total_hours,
+         contribution_of_capital_deepening = k_per_worker_growth*alpha,
+         crude_tfp = labour_productivity - contribution_of_capital_deepening) %>% 
   pivot_longer(-year) %>% 
-  filter(name %in% c("Labour Productivity",  "crude_tfp", "contrib_of_capital_deepening")) %>% 
-  mutate(name = str_to_sentence(str_replace(name, "_", " "))) %>% 
-  ggplot(aes(year, value, fill = name)) +
-  geom_col(position = "dodge") +
-  scale_y_continuous(labels = scales::percent_format())
+  filter(name %in% c("gdp_volume", "labour_productivity",  "crude_tfp", "contribution_of_capital_deepening")) %>% 
+  pivot_wider(names_from = name) %>% 
+  pivot_longer(-c(year, gdp_volume)) %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  ggplot() +
+  geom_col(aes(year, value, fill = name), position = "dodge") +
+  geom_point(aes(year, gdp_volume, colour = "GDP Growth")) +
+  geom_line(aes(year, gdp_volume, colour = "GDP Growth")) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = NULL,
+       y = "GDP growth rate\n contribution to growth",
+       colour = "Level of GDP Growth",
+       fill = "Contribution to GDP Growth")
 
 ```
 
+### Human capital contribution.
+
+```{r}
+df_calcs <- df_time_chunks %>%
+  filter(
+    indicator %in% c("Human Capital Stock (HK)", "GDP (volume)", "Total Hours", "Capital Stock (K)", "Labour Productivity"),
+    !is.na(compound_gr)
+  ) %>%
+  select(indicator, year, compound_gr) %>%
+  pivot_wider(names_from = indicator, values_from = compound_gr) %>%
+  janitor::clean_names() %>%
+  mutate(
+    # capital
+    capital_contribution = alpha * capital_stock_k,
+    # labour
+    labour_contribution = beta * total_hours,
+    # human capital
+    contribution_of_human_capital = human_capital_stock_hk * beta,
+    # capital per worker growth
+    k_per_worker_growth = capital_stock_k - total_hours,
+    # capital deepening
+    contribution_of_capital_deepening = k_per_worker_growth * alpha,
+    # crude tfp via labour prod
+    crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
+    # crude tfp via gdp
+    crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
+    # now here we are just doing the method based on GDP growth
+    labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
+    # here we do method based on labour productiviy
+    labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital
+  ) %>% 
+  pivot_longer(-year)
+
+```
+
+Must make a plot of ICT and non-ICT stock and contribution to growth.
+
+- Point is to show how even though ICT stock is small, it's importance to growth is large
+
+### ICT
+
+Plot of ICT revolution
+
+```{r}
+df_time_chunks %>%
+  filter(
+    str_detect(indicator, "ICT Capital"),
+    !is.na(compound_gr)
+  ) %>%
+  mutate(share = if_else(str_detect(indicator, "Share"), "Share of capital stock", "Growth in capital stock"),
+         ict = if_else(str_detect(indicator, "Non"), "Non ICT", "ICT")) %>%
+  ggplot(aes(time_chunk, value, colour = ict, group = indicator)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~share, scales = "free_y", nrow = 2) +
+  labs(x = NULL,
+       y = NULL,
+       colour = "Sector")
+
+```
+
+
+```{r}
+
+df_ict <- df %>% 
+  group_by(indicator) %>% 
+  mutate(time_chunk = year - year %% tc) %>% 
+  ungroup() %>% 
+  group_by(indicator, time_chunk) %>% 
+  mutate(mean_in_tc = mean(value, na.rm = T)) %>% 
+  ungroup() %>% 
+  filter(str_detect(indicator, "ICT Capital"),
+         !is.na(mean_in_tc)) %>% 
+  distinct(time_chunk, mean_in_tc, .keep_all = T)
+
+df_ict %>% 
+  ggplot(aes(year, mean_in_tc, colour = indicator)) +
+  geom_point() +
+  geom_line()
+
+df_time_chunks %>% 
+  filter(!is.na(compound_gr),
+         str_detect(indicator, "ICT Capital")) %>% 
+  select(indicator, time_chunk, compound_gr)
+
+```
+
+We need to multiply ICT capital growth by the average ICT capital share in the time chunk to get the ICT capital share contribution.
+
+From df_ict we get 
+```{r}
+df_ict_joined <- df %>% 
+  group_by(indicator) %>% 
+  mutate(time_chunk = year - year %% tc) %>% 
+  ungroup() %>% 
+  group_by(indicator, time_chunk) %>% 
+  mutate(mean_in_tc = mean(value, na.rm = T)) %>% 
+  ungroup() %>% 
+  filter(str_detect(indicator, "ICT Capital"),
+         !is.na(mean_in_tc)) %>% 
+  distinct(time_chunk, mean_in_tc, .keep_all = T) %>% 
+  select(indicator, time_chunk, mean_in_tc) %>% 
+  inner_join(df_time_chunks %>% 
+  filter(!is.na(compound_gr),
+         str_detect(indicator, "ICT Capital")) %>% 
+  select(indicator, time_chunk, compound_gr),
+  by = c("indicator", "time_chunk")) %>% 
+  mutate(compound_gr = case_when(
+    
+    str_detect(indicator, "Volume") ~ compound_gr * 100,
+    TRUE ~ compound_gr
+    
+  )) %>% 
+   mutate(mean_in_tc = case_when(
+    
+    str_detect(indicator, "Share") ~ mean_in_tc / 100,
+    TRUE ~ mean_in_tc
+    
+  )) %>% 
+  mutate(value = case_when(
+    
+    str_detect(indicator, "Share") ~ mean_in_tc,
+    TRUE ~ compound_gr
+    
+  )) %>% 
+  select(indicator, time_chunk, value) %>% 
+  pivot_wider(names_from = indicator) %>% 
+  janitor::clean_names()
+
+df_ict_joined %>% 
+  mutate(non_ict_capital_contribution = non_ict_capital_volume * non_ict_capital_share,
+         ict_capital_contribution = ict_capital_volume * ict_capital_share) %>% 
+  pivot_longer(-time_chunk) %>% 
+  mutate(sector = ifelse(str_detect(name, "non"), "Non-ICT", "ICT"),
+         type = case_when(
+           
+           str_detect(name, "contribution") ~ "Contribution to GDP growth",
+           str_detect(name, "share") ~ "Share of capital",
+           TRUE ~ "Growth of capital"
+           
+         )) %>% 
+  ggplot(aes(time_chunk, value, colour = type)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ sector) +
+  labs(x = NULL)
+
+```
+
+
+### Range calculations
+
+```{r}
+
+year_1 <- 1950
+year_2 <- 1960
+
+df_range_1 <- df %>%
+  filter(
+    country == "France",
+    year %in% c(year_1, year_2)
+  ) %>%
+  group_by(indicator) %>%
+  mutate(
+    ratio_value = value / lag(value),
+    one_over_change_year = 1 / (year - lag(year)),
+    compound_gr = (ratio_value^(one_over_change_year) - 1)*100,
+    range = paste0(year_1, "-", year_2)
+  ) %>%
+  ungroup() %>% 
+  select(indicator, year, value, country, compound_gr, range) %>% 
+  filter(!is.na(compound_gr)) %>% 
+  select(indicator, range, compound_gr) %>% 
+  pivot_wider(names_from = indicator, values_from = compound_gr) %>% 
+  janitor::clean_names() %>% 
+  mutate( 
+    capital_contribution = alpha * capital_stock_k,
+    labour_contribution = beta * total_hours,
+    contribution_of_human_capital = human_capital_stock_hk * beta,
+    k_per_worker_growth = capital_stock_k - total_hours,
+    contribution_of_capital_deepening = k_per_worker_growth * alpha,
+    crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
+    crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
+    labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
+    labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital) %>% 
+  pivot_longer(-range)
+
+df_range_1 %>% 
+  filter(name %in% c("capital_contribution", "labour_contribution", "crude_tfp_via_gdp", "gdp_volume")) %>% 
+  pivot_wider(names_from = name) %>% 
+  pivot_longer(-c(range, gdp_volume)) %>% 
+  ggplot() +
+  geom_col(aes(range, value, fill = name), alpha = .5) +
+  geom_point(aes(range, gdp_volume, colour = "GDP Growth"))
+  
+  
+
+```
 
