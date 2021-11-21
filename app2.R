@@ -27,7 +27,7 @@ ui <- fluidPage(
       selectizeInput("country",
                      "Select country",
                      choices = unique(df$country),
-                     selected = "France",
+                     selected = "Italy",
                      multiple = F
       ),
       sliderInput("alpha",
@@ -48,21 +48,21 @@ ui <- fluidPage(
                   "First date range:",
                   min = 1950,
                   max = 2018,
-                  value = c(1950, 1965),
+                  value = c(1964, 1977),
                   step = 1
       ),
       sliderInput("range_2",
                   "Second date range:",
                   min = 1950,
                   max = 2018,
-                  value = c(1970, 1990),
+                  value = c(1990, 2005),
                   step = 1
       ),
       sliderInput("range_3",
                   "Third date range:",
                   min = 1950,
                   max = 2018,
-                  value = c(2000, 2018),
+                  value = c(2006, 2018),
                   step = 1
       ),
 
@@ -88,8 +88,14 @@ ui <- fluidPage(
                   tabPanel("Decomposition of Capital Growth",
                            h2("Evolution of ICT and Non-ICT Capital"),
                            plotlyOutput("capital_decomp")),
-                  tabPanel("Test",
-                           tableOutput("table_1")))
+                  tabPanel("Period Decomposition",
+                           h2("GDP Method"),
+                           plotlyOutput("range_plot_1"),
+                           h2("Labour Prductivity Method"),
+                           plotlyOutput("range_plot_2")),
+                  tabPanel("Period Decomposition 2",
+                           h2("GDP Method"),
+                           plotlyOutput("range_plot_3")))
     )
   )
 )
@@ -180,10 +186,56 @@ server <- function(input, output) {
     ggplotly(h)
   })
 
-  output$table_1 <- function() {
-    df_ranges() %>% knitr::kable("html")
+  output$range_plot_1 <- renderPlotly({
+    h <- df_ranges() %>%
+      filter(name %in% c("capital_contribution", "labour_contribution", "crude_tfp_via_gdp", "gdp_volume")) %>%
+      pivot_wider(names_from = name) %>%
+      pivot_longer(-c(range, gdp_volume)) %>%
+      ggplot() +
+      geom_col(aes(range, value, fill = name), alpha = .5) +
+      geom_point(aes(range, gdp_volume, colour = "GDP Growth")) +
+      # geom_line(aes(as.numeric(range), gdp_volume, colour = "GDP Growth")) +
+      labs(x = NULL,
+           y = "GDP growth rate\n contribution to growth",
+           colour = NULL,
+           fill = NULL)
 
-  }
+    ggplotly(h)
+  })
+
+  output$range_plot_2 <- renderPlotly({
+    h <- df_ranges() %>%
+      filter(name %in% c("gdp_volume", "labour_productivity",  "crude_tfp_via_labour_productivity", "contribution_of_capital_deepening")) %>%
+      pivot_wider(names_from = name) %>%
+      pivot_longer(-c(range, gdp_volume)) %>%
+      ggplot() +
+      geom_col(aes(range, value, fill = name), alpha = .5) +
+      geom_point(aes(range, gdp_volume, colour = "GDP Growth")) +
+      # geom_line(aes(as.numeric(range), gdp_volume, colour = "GDP Growth")) +
+      labs(x = NULL,
+           y = "GDP growth rate\n contribution to growth",
+           colour = NULL,
+           fill = NULL)
+
+    ggplotly(h)
+  })
+
+  output$range_plot_3 <- renderPlotly({
+    h <- df_ranges() %>%
+      filter(name %in% c("gdp_volume", "capital_contribution", "contribution_of_human_capital", "labour_augmented_tfp_via_gdp")) %>%
+      pivot_wider(names_from = name) %>%
+      pivot_longer(-c(range, gdp_volume)) %>%
+      ggplot() +
+      geom_col(aes(range, value, fill = name), alpha = .5) +
+      geom_point(aes(range, gdp_volume, colour = "GDP Growth")) +
+      # geom_line(aes(as.numeric(range), gdp_volume, colour = "GDP Growth")) +
+      labs(x = NULL,
+           y = "GDP growth rate\n contribution to growth",
+           colour = NULL,
+           fill = NULL)
+
+    ggplotly(h)
+  })
 
   df_time_chunks <- reactive({
 
@@ -221,23 +273,14 @@ server <- function(input, output) {
       pivot_wider(names_from = indicator, values_from = compound_gr) %>%
       janitor::clean_names() %>%
       mutate(
-        # capital
         capital_contribution = a * capital_stock_k,
-        # labour
         labour_contribution = b * total_hours,
-        # human capital
         contribution_of_human_capital = human_capital_stock_hk * b,
-        # capital per worker growth
         k_per_worker_growth = capital_stock_k - total_hours,
-        # capital deepening
         contribution_of_capital_deepening = k_per_worker_growth * a,
-        # crude tfp via labour prod
         crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
-        # crude tfp via gdp
         crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
-        # now here we are just doing the method based on GDP growth
         labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
-        # here we do method based on labour productiviy
         labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital
       ) %>%
       pivot_longer(-year)
@@ -292,39 +335,112 @@ server <- function(input, output) {
 
     b <- 1 - a
 
-    df %>%
+    df_range_1 <- df %>%
       filter(
         country == input$country,
-        year %in% c(input$range_1[1], input$range_1[1])
+        year %in% c(input$range_1[1], input$range_1[2])
       ) %>%
       group_by(indicator) %>%
       mutate(
         ratio_value = value / lag(value),
         one_over_change_year = 1 / (year - lag(year)),
-        compound_gr = (ratio_value^(one_over_change_year) - 1)*100,
+        compound_gr = (ratio_value^(one_over_change_year) - 1) * 100,
         range = paste0(
-          # range_1[1],
-          "-"
-          # range_1[2]
-          )
+          input$range_1[1],
+          "-",
+          input$range_1[2]
+        )
       ) %>%
       ungroup() %>%
       select(indicator, year, value, country, compound_gr, range) %>%
       filter(!is.na(compound_gr)) %>%
       select(indicator, range, compound_gr) %>%
       pivot_wider(names_from = indicator, values_from = compound_gr) %>%
-      janitor::clean_names()
-      # mutate(
-      #   capital_contribution = a * capital_stock_k,
-      #   labour_contribution = b * total_hours,
-      #   contribution_of_human_capital = human_capital_stock_hk * b,
-      #   k_per_worker_growth = capital_stock_k - total_hours,
-      #   contribution_of_capital_deepening = k_per_worker_growth * a,
-      #   crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
-      #   crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
-      #   labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
-      #   labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital) %>%
-      # pivot_longer(-range)
+      janitor::clean_names() %>%
+      mutate(
+        capital_contribution = a * capital_stock_k,
+        labour_contribution = b * total_hours,
+        contribution_of_human_capital = human_capital_stock_hk * b,
+        k_per_worker_growth = capital_stock_k - total_hours,
+        contribution_of_capital_deepening = k_per_worker_growth * a,
+        crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
+        crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
+        labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
+        labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital) %>%
+      pivot_longer(-range)
+
+    df_range_2 <- df %>%
+      filter(
+        country == input$country,
+        year %in% c(input$range_2[1], input$range_2[2])
+      ) %>%
+      group_by(indicator) %>%
+      mutate(
+        ratio_value = value / lag(value),
+        one_over_change_year = 1 / (year - lag(year)),
+        compound_gr = (ratio_value^(one_over_change_year) - 1) * 100,
+        range = paste0(
+          input$range_2[1],
+          "-",
+          input$range_2[2]
+        )
+      ) %>%
+      ungroup() %>%
+      select(indicator, year, value, country, compound_gr, range) %>%
+      filter(!is.na(compound_gr)) %>%
+      select(indicator, range, compound_gr) %>%
+      pivot_wider(names_from = indicator, values_from = compound_gr) %>%
+      janitor::clean_names() %>%
+      mutate(
+        capital_contribution = a * capital_stock_k,
+        labour_contribution = b * total_hours,
+        contribution_of_human_capital = human_capital_stock_hk * b,
+        k_per_worker_growth = capital_stock_k - total_hours,
+        contribution_of_capital_deepening = k_per_worker_growth * a,
+        crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
+        crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
+        labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
+        labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital) %>%
+      pivot_longer(-range)
+
+    df_range_3 <- df %>%
+      filter(
+        country == input$country,
+        year %in% c(input$range_3[1], input$range_3[2])
+      ) %>%
+      group_by(indicator) %>%
+      mutate(
+        ratio_value = value / lag(value),
+        one_over_change_year = 1 / (year - lag(year)),
+        compound_gr = (ratio_value^(one_over_change_year) - 1) * 100,
+        range = paste0(
+          input$range_3[1],
+          "-",
+          input$range_3[2]
+        )
+      ) %>%
+      ungroup() %>%
+      select(indicator, year, value, country, compound_gr, range) %>%
+      filter(!is.na(compound_gr)) %>%
+      select(indicator, range, compound_gr) %>%
+      pivot_wider(names_from = indicator, values_from = compound_gr) %>%
+      janitor::clean_names() %>%
+      mutate(
+        capital_contribution = a * capital_stock_k,
+        labour_contribution = b * total_hours,
+        contribution_of_human_capital = human_capital_stock_hk * b,
+        k_per_worker_growth = capital_stock_k - total_hours,
+        contribution_of_capital_deepening = k_per_worker_growth * a,
+        crude_tfp_via_labour_productivity = labour_productivity - contribution_of_capital_deepening,
+        crude_tfp_via_gdp = gdp_volume - capital_contribution - labour_contribution,
+        labour_augmented_tfp_via_gdp = crude_tfp_via_gdp - contribution_of_human_capital,
+        labour_augmented_tfp_via_labour_productivity = crude_tfp_via_labour_productivity - contribution_of_human_capital) %>%
+      pivot_longer(-range)
+
+    df_range_1 %>%
+      bind_rows(df_range_2) %>%
+      bind_rows(df_range_3) %>%
+      mutate(value = round(value, 2))
 
   })
 
