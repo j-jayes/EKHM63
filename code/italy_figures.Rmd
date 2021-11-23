@@ -35,15 +35,18 @@ df <- read_rds(here("data", "df_all_countries.rds")) %>%
 ### Trends in GDP, labour, capital growth
 
 ```{r}
-jpeg(filename = here("images", "italy_gdp_capital_hours_human_capital.jpeg"),
-     height = 5,
-     width = 8,
+jpeg(filename = here("images", "italy_gdp__human_capital_v2.jpeg"),
+     height = 6,
+     width = 6,
      units = "in",
      res = 1000)
 
 df %>%
   # remove hk for first fig
-  filter(indicator %in% c("GDP (volume)", "Capital Stock (K)", "Total Hours", "Human Capital Stock (HK)")) %>%
+  filter(indicator %in% c("GDP (volume)", 
+                          # "Capital Stock (K)", 
+                          # "Total Hours", 
+                          "Human Capital Stock (HK)")) %>%
   group_by(indicator) %>%
   mutate(time_chunk = year - year %% 3) %>%
   ungroup() %>%
@@ -63,13 +66,154 @@ df %>%
     x = NULL,
     y = "Growth rate",
     colour = NULL,
-    title = "Evolution of GDP, Capital Stock and Hours Worked in Italy"
+    title = "Evolution of GDP and Human Capital Stock"
   ) +
   scale_color_brewer(palette = "Dark2")
 
 dev.off()
 
 ```
+
+### Trends in ICT
+
+```{r}
+df_hc <- df %>%
+  # remove hk for first fig
+  filter(indicator %in% c("Labor Share",
+                          "ICT Capital Share", 
+                          # "Capital Stock (K)", 
+                          # "Total Hours", 
+                          "Non-ICT Capital Share",
+                          "Non-ICT Capital Volume",
+                          "ICT Capital Volume")) %>%
+  filter(!is.na(value)) %>% 
+  group_by(indicator) %>%
+  mutate(time_chunk = year - year %% 3) %>%
+  ungroup() %>%
+  group_by(indicator, time_chunk) %>%
+  mutate(growth_rate = mean(growth_rate, na.rm = T),
+         value = mean(value, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(new_value = case_when(
+    
+    str_detect(indicator, "Share") ~ value,
+    TRUE ~ growth_rate
+    
+  )) %>% 
+  select(indicator, time_chunk, new_value)
+
+df_hc %>% 
+  filter(!str_detect(indicator, "Share")) %>% 
+  distinct() %>% 
+  ggplot(aes(time_chunk, new_value, colour = indicator)) +
+  geom_point() +
+  geom_line()
+
+df_hc %>% 
+  filter(str_detect(indicator, "Share")) %>% 
+  distinct() %>% 
+  ggplot(aes(time_chunk, new_value, fill = indicator)) +
+  geom_col() +
+  scale_y_continuous(labels = percent_format(scale = 1)) +
+  labs(x = "Share of capital")
+
+
+jpeg(filename = here("images", "italy_gdp__human_capital_v2.jpeg"),
+     height = 6,
+     width = 6,
+     units = "in",
+     res = 1000)
+
+
+
+  # mutate(indicator = fct_relevel(indicator, "GDP (volume)", after = 0)) %>%
+  ggplot(aes(time_chunk, new_value, colour = indicator)) +
+  # annotate("rect", xmin = 1964, xmax = 1977, ymin = -Inf, ymax = Inf, alpha = .5, fill = "grey80") +
+  annotate("rect", xmin = 1990, xmax = 2005, ymin = -Inf, ymax = Inf, alpha = .5, fill = "grey80") +
+  annotate("rect", xmin = 2006, xmax = 2018, ymin = -Inf, ymax = Inf, alpha = .5, fill = "grey80") +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1, accuracy = 1)) +
+  labs(
+    x = NULL,
+    y = "Growth rate",
+    colour = NULL,
+    title = "Evolution of GDP, Capital Stock and Hours Worked in Italy"
+  ) +
+  scale_color_brewer(palette = "Dark2")
+
+dev.off()
+```
+
+### Where is Italy in the world?
+
+```{r}
+df <- readxl::read_excel(here("data", "world_gdp.xlsx")) %>% 
+  janitor::clean_names()
+
+library(countrycode)
+
+df <- df %>% 
+  mutate(code_new = countrycode(country_code, "iso3c", "country.name")) %>% 
+  filter(!is.na(code_new)) %>% 
+  select(-code_new)
+```
+
+
+```{r}
+jpeg(filename = here("images", "economies_comparison_1_v1.jpeg"),
+     height = 5,
+     width = 8,
+     units = "in",
+     res = 1000)
+
+df %>%
+  pivot_longer(-c(country_name, country_code, indicator_name, indicator_code)) %>% 
+  mutate(year = parse_number(name)) %>% 
+  select(country_name, year, value) %>% 
+  filter(value > 1e10,
+         year <= 2020) %>% 
+  ggplot(aes(year, value, colour = country_name)) +
+  geom_point() +
+  geom_line() +
+  scale_y_log10(labels = dollar_format()) +
+  scale_color_brewer(palette = "Dark2") +
+  gghighlight::gghighlight(country_name %in% c("Italy", "United States", "Japan", "Germany")) +
+  labs(x = NULL,
+       y = "GDP (2011$)",
+       title = "GDP in selected large economies 1960-2020")
+
+dev.off()
+```
+
+
+```{r}
+jpeg(filename = here("images", "economies_comparison_2_v1.jpeg"),
+     height = 5,
+     width = 8,
+     units = "in",
+     res = 1000)
+
+df %>%
+  pivot_longer(-c(country_name, country_code, indicator_name, indicator_code)) %>% 
+  mutate(year = parse_number(name)) %>% 
+  select(country_name, year, value) %>% 
+  filter(value > 1e10, year <= 1980) %>% 
+  ggplot(aes(year, value, colour = country_name)) +
+  geom_point() +
+  geom_line() +
+    scale_color_brewer(palette = "Dark2") +
+  expand_limits(x = 2020) +
+  scale_y_log10(labels = dollar_format()) +
+  gghighlight::gghighlight(country_name %in% c("Italy", "United States", "Japan", "Germany")) +
+  labs(x = NULL,
+       y = "GDP (2011$)",
+       title = "GDP in selected large economies 1960-1980")
+
+dev.off()
+```
+
 
 ### Timeline
 
@@ -621,7 +765,7 @@ df_range %>%
   geom_hline(yintercept = 0, lty = 2) +
   geom_col(aes(range, value, fill = name), alpha = .9) +
   geom_point(aes(range, labour_productivity, colour = "Labour Productivity"), size = 5) +
-  scale_fill_manual(values = c(orange_col, blue_col, teal_col)) +
+  scale_fill_manual(values = c(orange_col, lime_col, teal_col)) +
   scale_color_manual(values = red_col) +
   guides(fill = guide_legend(nrow = 3, byrow = T)) +
   # geom_line(aes(as.numeric(range), gdp_volume, colour = "GDP Growth")) +
@@ -659,7 +803,7 @@ df_range %>%
   data_color(
     columns = contribution_of_human_capital,
     colors = scales::col_numeric(
-      palette = as.character(paletteer_d("ggsci::blue_material", n = 6)),
+      palette = as.character(paletteer_d("ggsci::lime_material", n = 6)),
       domain = NULL
     )
   ) %>%
@@ -704,8 +848,8 @@ df_range %>%
     contribution_of_capital_deepening = "Capital Deepening",
     contribution_of_human_capital = "Human Capital",
     labour_augmented_tfp_via_labour_productivity = "LA TFP"
-  )
-# %>% gtsave(filename = here("tables", "la_tfp_2_v1.PNG"))
+  ) 
+# %>% gtsave(filename = here("tables", "la_tfp_2_v2.PNG"))
 
 
 ```
@@ -785,10 +929,35 @@ df_capital_range <- df_capital_range_1 %>%
   bind_rows(df_capital_range_3)
 
 
-df_range %>% 
+df_capital_range <- df_range %>% 
+  filter(str_detect(name, "ict")) %>% 
   inner_join(df_capital_range, by = "range") %>% 
   mutate(capital_contribution = value*mean_capital_share) %>% 
   filter(!is.na(capital_contribution))
+
+df_capital_range <- df_capital_range %>% 
+  mutate(indicator = str_to_lower(indicator),
+         indicator = str_replace_all(indicator, " ", "_"),
+         indicator = str_replace_all(indicator, "-", "_")) %>% 
+  filter(name == indicator)
+
+df_capital_range_vf <- df_capital_range %>%
+  select(-indicator) %>%
+  mutate(name = str_remove(name, "_share")) %>%
+  rename(
+    growth_rate = value,
+    indicator = name
+  ) %>%
+  pivot_longer(-c(range, indicator))
+
+
+df_capital_range_vf %>% 
+  mutate(name = fct_relevel(name, "capital_contribution", after = 2)) %>% 
+  ggplot(aes(range, value, fill = indicator)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~name) +
+  scale_y_continuous(labels = percent_format())
+
 ```
 
 
