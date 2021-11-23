@@ -752,3 +752,67 @@ df_range %>%
 # %>% gtsave(filename = here("tables", "tfp_comparison_2_v1.PNG"))
 ```
 
+
+### ICT growth
+
+Function to get the avg value of ict and non-ict capital
+
+```{r}
+year_1 <- 2006
+year_2 <- 2018
+
+get_mean_capital_shares <- function(year_1, year_2) {
+  
+  df %>%
+    filter(
+      between(year, year_1, year_2),
+      indicator %in% c("ICT Capital Share", "Non-ICT Capital Share")
+    ) %>%
+    mutate(range = paste0(year_1, "-", year_2)) %>%
+    group_by(indicator) %>%
+    mutate(mean_capital_share = mean(value, na.rm = T) / 100) %>%
+    ungroup() %>%
+    select(indicator, mean_capital_share, range) %>%
+    distinct()
+}
+
+df_capital_range_1 <- get_mean_capital_shares(1964, 1977)
+df_capital_range_2 <- get_mean_capital_shares(1990, 2005)
+df_capital_range_3 <- get_mean_capital_shares(2006, 2018)
+
+df_capital_range <- df_capital_range_1 %>% 
+  bind_rows(df_capital_range_2) %>% 
+  bind_rows(df_capital_range_3)
+
+
+df_range %>% 
+  inner_join(df_capital_range, by = "range") %>% 
+  mutate(capital_contribution = value*mean_capital_share) %>% 
+  filter(!is.na(capital_contribution))
+```
+
+
+```{r}
+df_range %>%
+  
+  
+  filter(name %in% c("labour_productivity", "contribution_of_capital_deepening", "crude_tfp_via_labour_productivity")) %>%
+  pivot_wider(names_from = name) %>%
+  pivot_longer(-c(range, labour_productivity)) %>%
+  mutate(name = str_to_title(str_replace_all(name, "_", " "))) %>%
+  ggplot() +
+  geom_hline(yintercept = 0, lty = 2) +
+  geom_col(aes(range, value, fill = name), alpha = .9) +
+  geom_point(aes(range, labour_productivity, colour = "Labour Productivity"), size = 5) +
+  scale_fill_manual(values = c(orange_col, teal_col, blue_col)) +
+  scale_color_manual(values = red_col) +
+  guides(fill = guide_legend(nrow = 2, byrow = T)) +
+  # geom_line(aes(as.numeric(range), gdp_volume, colour = "GDP Growth")) +
+  labs(
+    x = NULL,
+    y = "GDP growth rate\n contribution to growth",
+    colour = NULL,
+    fill = NULL
+  )
+```
+
